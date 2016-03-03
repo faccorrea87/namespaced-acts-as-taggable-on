@@ -336,7 +336,7 @@ module ActsAsTaggableOn::Taggable
       add_custom_context(context)
 
       variable_name = "@#{context.to_s.singularize}_list"
-      process_dirty_object(context, new_list, _namespace) unless custom_contexts.include?(context.to_s) and _namespace == namespace
+      process_dirty_object(context, new_list) unless custom_contexts.include?(context.to_s)
 
       instance_variable_set(variable_name, ActsAsTaggableOn.default_parser.new(new_list).parse)
     end
@@ -345,8 +345,8 @@ module ActsAsTaggableOn::Taggable
       self.class.tag_types.map(&:to_s) + custom_contexts
     end
 
-    def process_dirty_object(context, new_list, _namespace = self.namespace)
-      value = new_list.is_a?(Array) ? ActsAsTaggableOn::TagList.new(new_list, namespace: _namespace) : new_list
+    def process_dirty_object(context, new_list)
+      value = new_list.is_a?(Array) ? ActsAsTaggableOn::TagList.new(new_list) : new_list
       attrib = "#{context.to_s.singularize}_list"
 
       if changed_attributes.include?(attrib)

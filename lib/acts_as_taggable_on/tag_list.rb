@@ -3,7 +3,6 @@ require 'active_support/core_ext/module/delegation'
 
 module ActsAsTaggableOn
   class TagList < Array
-    attr_accessor :namespace
     attr_accessor :owner
     attr_accessor :parser
 
@@ -94,7 +93,6 @@ module ActsAsTaggableOn
       options.assert_valid_keys :parse, :parser
 
       parser = options[:parser] ? options[:parser] : @parser
-      namespace = options[:namespace]
 
       args.map! { |a| parser.new(a).parse } if options[:parse] || options[:parser]
 
