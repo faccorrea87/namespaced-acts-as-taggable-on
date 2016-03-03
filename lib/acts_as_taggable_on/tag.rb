@@ -2,7 +2,7 @@
 module ActsAsTaggableOn
   class Tag < ::ActiveRecord::Base
 
-    attr_accessible :name if defined?(ActiveModel::MassAssignmentSecurity)
+    attr_accessible :name, :namespace if defined?(ActiveModel::MassAssignmentSecurity)
 
     ### ASSOCIATIONS:
 
@@ -11,7 +11,7 @@ module ActsAsTaggableOn
     ### VALIDATIONS:
 
     validates_presence_of :name
-    validates_uniqueness_of :name, if: :validates_name_uniqueness?
+    validates_uniqueness_of :name, scope: [:namespace], if: :validates_name_uniqueness?
     validates_length_of :name, maximum: 255
 
     # monkey patch this method if don't need name uniqueness validation
@@ -22,6 +22,7 @@ module ActsAsTaggableOn
     ### SCOPES:
     scope :most_used, ->(limit = 20) { order('taggings_count desc').limit(limit) }
     scope :least_used, ->(limit = 20) { order('taggings_count asc').limit(limit) }
+    scope :namespaced, ->(namespace) { where(namespace: namespace)}
 
     def self.named(name)
       if ActsAsTaggableOn.strict_case_match
@@ -29,6 +30,7 @@ module ActsAsTaggableOn
       else
         where(['LOWER(name) = LOWER(?)', as_8bit_ascii(unicode_downcase(name))])
       end
+
     end
 
     def self.named_any(list)
@@ -58,26 +60,26 @@ module ActsAsTaggableOn
 
     ### CLASS METHODS:
 
-    def self.find_or_create_with_like_by_name(name)
+    def self.find_or_create_with_like_by_name(name, namespace = nil)
       if ActsAsTaggableOn.strict_case_match
-        self.find_or_create_all_with_like_by_name([name]).first
+        self.find_or_create_all_with_like_by_name([name], namespace).first
       else
-        named_like(name).first || create(name: name)
+        named_like(name).namespaced(namespace).first || create(name: name, namespace: namespace)
       end
     end
 
-    def self.find_or_create_all_with_like_by_name(*list)
+    def self.find_or_create_all_with_like_by_name(*list, namespace)
       list = Array(list).flatten
 
       return [] if list.empty?
 
-      existing_tags = named_any(list)
+      existing_tags = named_any(list).namespaced(namespace)
 
       list.map do |tag_name|
         comparable_tag_name = comparable_name(tag_name)
         existing_tag = existing_tags.find { |tag| comparable_name(tag.name) == comparable_tag_name }
         begin
-          existing_tag || create(name: tag_name)
+          existing_tag || create(name: tag_name, namespace: namespace)
         rescue ActiveRecord::RecordNotUnique
           # Postgres aborts the current transaction with
           # PG::InFailedSqlTransaction: ERROR:  current transaction is aborted, commands ignored until end of transaction block

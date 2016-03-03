@@ -4,6 +4,7 @@ module ActsAsTaggableOn::Taggable
       base.extend ActsAsTaggableOn::Taggable::Core::ClassMethods
 
       base.class_eval do
+        attr_accessor :namespace
         attr_writer :custom_contexts
         after_save :save_tags
       end
@@ -42,8 +43,8 @@ module ActsAsTaggableOn::Taggable
               tag_list_on('#{tags_type}')
             end
 
-            def #{tag_type}_list=(new_tags)
-              set_tag_list_on('#{tags_type}', new_tags)
+            def #{tag_type}_list=(new_tags, _namespace = self.namespace)
+              set_tag_list_on('#{tags_type}', new_tags, _namespace)
             end
 
             def all_#{tags_type}_list
@@ -84,7 +85,7 @@ module ActsAsTaggableOn::Taggable
       #   User.tagged_with(["awesome", "cool"], :match_all => true) # Users that are tagged with just awesome and cool
       #   User.tagged_with(["awesome", "cool"], :owned_by => foo ) # Users that are tagged with just awesome and cool by 'foo'
       #   User.tagged_with(["awesome", "cool"], :owned_by => foo, :start_at => Date.today ) # Users that are tagged with just awesome, cool by 'foo' and starting today
-      def tagged_with(tags, options = {})
+      def tagged_with(tags, options = {}, namespace = nil)
         tag_list = ActsAsTaggableOn.default_parser.new(tags).parse
         options = options.dup
         empty_result = where('1 = 0')
@@ -99,6 +100,7 @@ module ActsAsTaggableOn::Taggable
 
         context = options.delete(:on)
         owned_by = options.delete(:owned_by)
+
         alias_base_name = undecorated_table_name.gsub('.', '_')
         # FIXME use ActiveRecord's connection quote_column_name
         quote = ActsAsTaggableOn::Utils.using_postgresql? ? '"' : ''
@@ -126,11 +128,10 @@ module ActsAsTaggableOn::Taggable
         elsif any = options.delete(:any)
           # get tags, drop out if nothing returned (we need at least one)
           tags = if options.delete(:wild)
-                   ActsAsTaggableOn::Tag.named_like_any(tag_list)
+                   ActsAsTaggableOn::Tag.namespaced(namespace).named_like_any(tag_list)
                  else
-                   ActsAsTaggableOn::Tag.named_any(tag_list)
+                   ActsAsTaggableOn::Tag..namespaced(namespace).named_any(tag_list)
                  end
-
           return empty_result if tags.length == 0
 
           # setup taggings alias so we can chain, ex: items_locations_taggings_awesome_cool_123
@@ -169,7 +170,7 @@ module ActsAsTaggableOn::Taggable
             order_by << "(SELECT count(*) FROM #{tagging_cond}) desc"
           end
         else
-          tags = ActsAsTaggableOn::Tag.named_any(tag_list)
+          tags = ActsAsTaggableOn::Tag.namespaced(namespace).named_any(tag_list)
 
           return empty_result unless tags.length == tag_list.length
 
@@ -331,11 +332,11 @@ module ActsAsTaggableOn::Taggable
       scope
     end
 
-    def set_tag_list_on(context, new_list)
+    def set_tag_list_on(context, new_list, _namespace = self.namespace)
       add_custom_context(context)
 
       variable_name = "@#{context.to_s.singularize}_list"
-      process_dirty_object(context, new_list) unless custom_contexts.include?(context.to_s)
+      process_dirty_object(context, new_list, _namespace) unless custom_contexts.include?(context.to_s) and _namespace == namespace
 
       instance_variable_set(variable_name, ActsAsTaggableOn.default_parser.new(new_list).parse)
     end
@@ -344,8 +345,8 @@ module ActsAsTaggableOn::Taggable
       self.class.tag_types.map(&:to_s) + custom_contexts
     end
 
-    def process_dirty_object(context, new_list)
-      value = new_list.is_a?(Array) ? ActsAsTaggableOn::TagList.new(new_list) : new_list
+    def process_dirty_object(context, new_list, _namespace = self.namespace)
+      value = new_list.is_a?(Array) ? ActsAsTaggableOn::TagList.new(new_list, namespace: _namespace) : new_list
       attrib = "#{context.to_s.singularize}_list"
 
       if changed_attributes.include?(attrib)
@@ -373,18 +374,18 @@ module ActsAsTaggableOn::Taggable
 
     ##
     # Find existing tags or create non-existing tags
-    def load_tags(tag_list)
-      ActsAsTaggableOn::Tag.find_or_create_all_with_like_by_name(tag_list)
+    def load_tags(tag_list, _namespace = self.namespace)
+      ActsAsTaggableOn::Tag.find_or_create_all_with_like_by_name(tag_list, _namespace )
     end
 
-    def save_tags
+    def save_tags(_namespace = self.namespace)
       tagging_contexts.each do |context|
         next unless tag_list_cache_set_on(context)
         # List of currently assigned tag names
         tag_list = tag_list_cache_on(context).uniq
 
         # Find existing tags or create non-existing tags:
-        tags = find_or_create_tags_from_list_with_context(tag_list, context)
+        tags = find_or_create_tags_from_list_with_context(tag_list, context, _namespace)
 
         # Tag objects for currently assigned tags
         current_tags = tags_on(context)
@@ -460,8 +461,8 @@ module ActsAsTaggableOn::Taggable
     #
     # @param [Array<String>] tag_list Tags to find or create
     # @param [Symbol] context The tag context for the tag_list
-    def find_or_create_tags_from_list_with_context(tag_list, _context)
-      load_tags(tag_list)
+    def find_or_create_tags_from_list_with_context(tag_list, _context, _namespace = self.namespace)
+      load_tags(tag_list, _namespace)
     end
   end
 end
