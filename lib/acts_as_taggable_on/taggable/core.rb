@@ -130,7 +130,7 @@ module ActsAsTaggableOn::Taggable
           tags = if options.delete(:wild)
                    ActsAsTaggableOn::Tag.namespaced(namespace).named_like_any(tag_list)
                  else
-                   ActsAsTaggableOn::Tag..namespaced(namespace).named_any(tag_list)
+                   ActsAsTaggableOn::Tag.namespaced(namespace).named_any(tag_list)
                  end
           return empty_result if tags.length == 0
 
